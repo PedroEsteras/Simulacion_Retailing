@@ -4,8 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from src.models.models.multinomial_logit import MultinomialLogitModel
 from src.models.transactions.base import TransactionGenerator
-
-
+import csv
+import os
 
 class Supermercado():
     def __init__(self, lista_de_productos: list[int],  
@@ -40,8 +40,8 @@ class Supermercado():
         self.horarios_de_entrega_min = [self._horario_str_a_minutos(h) for h in self.horarios_de_entrega]
 
 
-        self.compra_online_por_baches_dia_anterior: dict[str, dict[int, int]] = {horario: {} for horario in self.horarios_de_entrega}
-        self.compra_online_por_baches_actual: dict[str, dict[int, int]] = {horario: {} for horario in self.horarios_de_entrega}
+        self.compra_online_por_baches_dia_anterior: dict[str, list[int]] = {horario: [] for horario in self.horarios_de_entrega}
+        self.compra_online_por_baches_actual: dict[str, list[int]] = {horario: [] for horario in self.horarios_de_entrega}
 
         self.modelo1 = MultinomialLogitModel.simple_random([0] + self.lista_de_productos)
         self.modelo2 = MultinomialLogitModel.simple_random([0] + self.lista_de_productos)
@@ -61,23 +61,23 @@ class Supermercado():
     def minutos_hasta_proximo_cliente_online(self, minuto_actual):
         lam = self.lambda_online_por_minuto(minuto_actual)
         if lam == 0:
-            return 1e9  # no llega nadie en esta hora
+            return  None # no llega nadie en esta hora
         return random.expovariate(lam)
 
     def minutos_hasta_proximo_cliente_presencial(self, minuto_actual):
         lam = self.lambda_presencial_por_minuto(minuto_actual)
         if lam == 0:
-            return 1e9   # nadie llega en esta hora
+            return None   # nadie llega en esta hora
         return random.expovariate(lam)
 
     def minutos_hasta_proximo_cliente_mixto(self, minuto_actual):
         lam = self.lambda_mixto_por_minuto(minuto_actual)
         if lam == 0:
-            return 1e9
-        return random.expovariate(lam)
+            return None
+        return random.expovariate(lam)   
 
     def reiniciar_compra_online_actual(self):
-        self.compra_online_por_baches_actual: dict[str, dict[int, int]] = {horario: {} for horario in self.horarios_de_entrega}
+        self.compra_online_por_baches_actual: dict[str, list[int]] = {horario: [] for horario in self.horarios_de_entrega}
 
     def obtener_productos_disponibles(self):
         productos_disponibles = []
@@ -103,82 +103,104 @@ class Supermercado():
         return probabilidades
 
     def consumir_stock(self, producto_comprado: int):
+        # DEVOLVER PRODUCTO CONSUMIDO!!!!!!
         if producto_comprado != 0:
             if self.cantidades[producto_comprado] == 0:
                 #Se agoto el stock
-                pass
+                return None
             else:
                 self.cantidades[producto_comprado] -= 1
+                return producto_comprado
+        else:
+            return None
 
-    def generar_lista_de_llegadas_online(self): 
-        horario_actual = 0
-        horario_final = 24 * 60
-        lista_de_llegadas = []
+    def generar_lista_de_llegadas_online(self):
+        llegadas = []
+        for hora in range(24):
+            inicio = hora * 60
+            fin = (hora + 1) * 60
+            minuto_actual = inicio
 
-        while horario_actual < horario_final:
-            dt = self.minutos_hasta_proximo_cliente_online(horario_actual)
-            horario_actual += dt
-            if horario_actual >= horario_final:
-                break
-            lista_de_llegadas.append(horario_actual)
+            while True:
+                dt = self.minutos_hasta_proximo_cliente_online(minuto_actual)
+                if dt is None:
+                    break
 
-        return lista_de_llegadas
+                minuto_actual += dt
+                if minuto_actual >= fin:
+                    break
+
+                llegadas.append(minuto_actual)
+
+        return llegadas
 
     def generar_lista_de_llegadas_presencial(self):
+        llegadas = []
 
-        horario_inicial = self.horarios_apertura_cierre[0] * 60
-        horario_final   = self.horarios_apertura_cierre[1] * 60
-        horario_actual  = horario_inicial
+        h0, h1 = self.horarios_apertura_cierre
 
-        lista_de_llegadas = []
+        for hora in range(h0, h1):
+            inicio = hora * 60
+            fin = (hora + 1) * 60
+            minuto_actual = inicio
 
-        while horario_actual < horario_final:
+            while True:
+                dt = self.minutos_hasta_proximo_cliente_presencial(minuto_actual)
 
-            dt = self.minutos_hasta_proximo_cliente_presencial(horario_actual)
-            horario_actual += dt
+                if dt is None:         # lam == 0 → no hay llegadas
+                    break
 
-            if horario_actual >= horario_final:
-                break
+                minuto_actual += dt
 
-            lista_de_llegadas.append(horario_actual)
+                if minuto_actual >= fin:
+                    # Nos pasamos de la hora → no contamos el cliente
+                    break
 
-        return lista_de_llegadas
+                # Llegada válida
+                llegadas.append(minuto_actual)
+
+        return llegadas
 
     def generar_lista_de_llegadas_mixto(self):
+        h0, h1 = self.horarios_apertura_cierre
 
-        horario_inicial = self.horarios_apertura_cierre[0] * 60
-        horario_final   = self.horarios_apertura_cierre[1] * 60
-        horario_actual  = horario_inicial
+        llegadas_online = []
+        llegadas_presencial = []
 
-        lista_de_llegadas_online = []
-        lista_de_llegadas_presencial = []
+        for hora in range(h0, h1):
+            inicio = hora * 60
+            fin = (hora + 1) * 60
+            minuto_actual = inicio
 
-        while horario_actual < horario_final:
+            while True:
+                dt = self.minutos_hasta_proximo_cliente_mixto(minuto_actual)
+                if dt is None:
+                    break
 
-            dt = self.minutos_hasta_proximo_cliente_mixto(horario_actual)
-            horario_actual += dt
+                minuto_actual += dt
 
-            if horario_actual >= horario_final:
-                break
+                if minuto_actual >= fin:
+                    break
 
-            # Decide si el mixto es online o presencial
-            if random.random() < self.gamma_mixtos:
-                lista_de_llegadas_online.append(horario_actual)
-            else:
-                lista_de_llegadas_presencial.append(horario_actual)
+                # Decisión online vs presencial
+                if random.random() < self.gamma_mixtos:
+                    llegadas_online.append(minuto_actual)
+                else:
+                    llegadas_presencial.append(minuto_actual)
 
-        return lista_de_llegadas_online, lista_de_llegadas_presencial
+        return llegadas_online, llegadas_presencial
 
     def agregar_producto_a_la_compra_online_actual(self, horario, producto: int):
-        if producto not in self.compra_online_por_baches_actual[horario]:
-            self.compra_online_por_baches_actual[horario][producto] = 0
-        self.compra_online_por_baches_actual[horario][producto] += 1
-
+        self.compra_online_por_baches_actual[horario].append(producto)
+        
     def consumir_stock_de_un_bache_online(self, horario: str):
         productos_y_cantidades_del_horario = self.compra_online_por_baches_dia_anterior[horario]
-        for producto, cantidad in productos_y_cantidades_del_horario.items():
-            for _ in range(cantidad):
-                self.consumir_stock(producto)
+        for producto in productos_y_cantidades_del_horario:
+            producto_comprado = self.consumir_stock(producto)
+            # ACA SE PUEDE PONER 
+            # if producto_comprado is not None:
+            # Para evitar que se guarden las transacciones si no se compro ningun producto
+            self.guardar_transaccion("ONLINE", self.lista_de_productos, producto_comprado)
 
     def _horario_str_a_minutos(self, horario_str: str) -> int:
         hh, mm = map(int, horario_str.split(":"))
@@ -206,6 +228,7 @@ class Supermercado():
 
     def simular_dia(self, tiempos: list[int], is_online: list[bool], modelos: list[MultinomialLogitModel], tiempos_de_entrega: list[str]):
         self.dia += 1
+        self.registrar_dia(self.dia)
 
         for i in range(len(tiempos)):
 
@@ -216,7 +239,6 @@ class Supermercado():
             for h_str, h_min in zip(self.horarios_de_entrega, self.horarios_de_entrega_min):
                 if horario_actual < h_min <= horario_siguiente:
                     self.consumir_stock_de_un_bache_online(h_str)
-
                    
 
             tipo_de_cliente = "online" if is_online[i] else "presencial"
@@ -227,14 +249,17 @@ class Supermercado():
 
             if tipo_de_cliente == "presencial":
                 ofrecidos = self.obtener_productos_disponibles()
-                producto_comprado = tg.generate_transaction_for(ofrecidos).product
-                self.consumir_stock(producto_comprado)
+                producto_elegido = tg.generate_transaction_for(ofrecidos).product
+                prodcuto_comprado = self.consumir_stock(producto_elegido)
+                if prodcuto_comprado is not None:
+                    self.guardar_transaccion(f"PRESENCIAL t={horario_actual}", ofrecidos, prodcuto_comprado)
+
                 
 
             elif tipo_de_cliente == "online":
-                ofrecidos = self.lista_de_productos
-                producto_comprado = tg.generate_transaction_for(ofrecidos).product
-                self.agregar_producto_a_la_compra_online_actual(horario_de_entrega, producto_comprado)
+                ofrecidos = self.lista_de_productos   #poner un metodo que haga lo mismo. 
+                producto_elegido = tg.generate_transaction_for(ofrecidos).product
+                self.agregar_producto_a_la_compra_online_actual(horario_de_entrega, producto_elegido)
         
 
         self.compra_online_por_baches_dia_anterior = self.compra_online_por_baches_actual
@@ -285,7 +310,38 @@ class Supermercado():
                 self.simular_dia_online(tiempos, is_online, modelos, tiempos_de_entrega)
             else:
                 self.simular_dia(tiempos, is_online, modelos, tiempos_de_entrega)
-        
+
+    def guardar_transaccion(self, tipo, productos_disponibles, producto_comprado):
+        # Convertir lista de productos en una cadena separada por ";"
+        productos_str = ";".join(str(p) for p in productos_disponibles)
+
+        # Verificar si el archivo existe para escribir encabezados solo una vez
+        archivo = "transacciones.csv"
+        escribir_header = not os.path.exists(archivo)
+
+        with open(archivo, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+
+            if escribir_header:
+                writer.writerow(["tipo", "productos_disponibles", "producto_comprado"])
+
+            writer.writerow([tipo.upper(), productos_str, producto_comprado])
+
+    def registrar_dia(self, dia):
+        archivo = "transacciones.csv"
+        escribir_header = not os.path.exists(archivo)
+
+        with open(archivo, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+
+            # Si es nuevo archivo, agregar encabezado
+            if escribir_header:
+                writer.writerow(["tipo", "productos_disponibles", "producto_comprado"])
+
+            # Registrar día con fila especial
+            writer.writerow([f"DIA {dia}", "", ""])
+
+    
     # GRAFICOS SIN EFECTO EN LA SIMULACION
 
     def simular_con_graficos_un_dia(self):
@@ -432,8 +488,161 @@ class Supermercado():
         print("Mixto Presencial:   ", sum(conteo_mixpre))
         print("Presencial:         ", sum(conteo_pres))
 
+        print("\nOriginales:")
+        print("Online:             ", sum(self.lambdas_online_por_hora))
+        print("Mixto Online:       ", sum(self.lambdas_mixto_por_hora) * self.gamma_mixtos)
+        print("Mixto Presencial:   ", sum(self.lambdas_mixto_por_hora) * (1 - self.gamma_mixtos))
+        print("Presencial:         ", sum(self.lambdas_presencial_por_hora))
 
+    def grafico_histogramas_por_tipo(self):
+        import matplotlib.pyplot as plt
+        import numpy as np
 
+        # --- Generar llegadas simuladas ---
+        online = self.generar_lista_de_llegadas_online()
+        pres = self.generar_lista_de_llegadas_presencial()
+        mix_on, mix_pre = self.generar_lista_de_llegadas_mixto()
+
+        # Función para convertir minuto -> hora
+        hora = lambda t: int(t // 60)
+
+        horas = np.arange(24)
+
+        # --- Conteos simulados ---
+        sim_online  = np.zeros(24, int)
+        sim_pres    = np.zeros(24, int)
+        sim_mixon   = np.zeros(24, int)
+        sim_mixpre  = np.zeros(24, int)
+
+        for t in online:      sim_online[hora(t)] += 1
+        for t in pres:        sim_pres[hora(t)] += 1
+        for t in mix_on:      sim_mixon[hora(t)] += 1
+        for t in mix_pre:     sim_mixpre[hora(t)] += 1
+
+        # --- Teóricos ---
+        teor_online   = np.array(self.lambdas_online_por_hora)
+        teor_pres     = np.array(self.lambdas_presencial_por_hora)
+        teor_mixon    = np.array(self.lambdas_mixto_por_hora) * self.gamma_mixtos
+        teor_mixpre   = np.array(self.lambdas_mixto_por_hora) * (1 - self.gamma_mixtos)
+
+        # --- Plot ---
+        fig, axes = plt.subplots(4, 1, figsize=(14, 16), sharex=True)
+
+        tipos = [
+            ("Online", sim_online, teor_online),
+            ("Mixto Online", sim_mixon, teor_mixon),
+            ("Mixto Presencial", sim_mixpre, teor_mixpre),
+            ("Presencial", sim_pres, teor_pres),
+        ]
+
+        for ax, (titulo, sim, teor) in zip(axes, tipos):
+
+            # Barras para lo simulado
+            ax.bar(horas, sim, alpha=0.6, label="Simulado")
+
+            # Línea punteada para lo teórico
+            ax.plot(horas, teor, "--", linewidth=2, label="Teórico")
+
+            ax.set_title(f"{titulo}: Simulación vs Teórico")
+            ax.set_ylabel("Clientes por hora")
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+
+        axes[-1].set_xlabel("Hora del día")
+        plt.tight_layout()
+        plt.show()
+
+        print("\nTotales:")
+        print("Online:             ", len(online))
+        print("Mixto Online:       ", len(mix_on))
+        print("Mixto Presencial:   ", len(mix_pre))
+        print("Presencial:         ", len(pres))
+
+        print("\nOriginales:")
+        print("Online:             ", sum(self.lambdas_online_por_hora))
+        print("Mixto Online:       ", sum(self.lambdas_mixto_por_hora) * self.gamma_mixtos)
+        print("Mixto Presencial:   ", sum(self.lambdas_mixto_por_hora) * (1 - self.gamma_mixtos))
+        print("Presencial:         ", sum(self.lambdas_presencial_por_hora))
+
+    def comparar_totales_con_n_simulaciones(self, N=200, bin_size=5):
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        # Valores teóricos
+        teor_online = sum(self.lambdas_online_por_hora)
+        teor_pres = sum(self.lambdas_presencial_por_hora)
+        teor_mixon = sum(self.lambdas_mixto_por_hora) * self.gamma_mixtos
+        teor_mixpre = sum(self.lambdas_mixto_por_hora) * (1 - self.gamma_mixtos)
+
+        teoricos = {
+            "Online": teor_online,
+            "Mixto Online": teor_mixon,
+            "Mixto Presencial": teor_mixpre,
+            "Presencial": teor_pres
+        }
+
+        # Para almacenar los totales simulados
+        resultados = {
+            "Online": [],
+            "Mixto Online": [],
+            "Mixto Presencial": [],
+            "Presencial": []
+        }
+
+        # --- Correr N simulaciones ---
+        for _ in range(N):
+            online = self.generar_lista_de_llegadas_online()
+            pres = self.generar_lista_de_llegadas_presencial()
+            mix_on, mix_pre = self.generar_lista_de_llegadas_mixto()
+
+            resultados["Online"].append(len(online))
+            resultados["Mixto Online"].append(len(mix_on))
+            resultados["Mixto Presencial"].append(len(mix_pre))
+            resultados["Presencial"].append(len(pres))
+
+        # --- Graficar ---
+        fig, axes = plt.subplots(4, 1, figsize=(12, 18))
+
+        tipos = list(resultados.keys())
+
+        for ax, tipo in zip(axes, tipos):
+
+            data = np.array(resultados[tipo])
+            teor = teoricos[tipo]
+
+            # Histograma
+            bins = np.arange(min(data), max(data) + bin_size, bin_size)
+            ax.hist(data, bins=bins, alpha=0.7, edgecolor='black')
+
+            # Línea del teórico
+            ax.axvline(teor, color='red', linestyle='--', linewidth=2, label=f"λ teórico = {teor:.1f}")
+
+            # Línea de la media simulada
+            media = np.mean(data)
+            ax.axvline(media, color='green', linestyle='-', linewidth=2, label=f"Media simulada = {media:.1f}")
+
+            ax.set_title(f"{tipo} – Distribución del total por día (N={N})")
+            ax.set_xlabel("Total diario de clientes")
+            ax.set_ylabel("Frecuencia")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+
+        # --- Imprimir medias ---
+        print("\nResumen estadístico:")
+        for tipo in tipos:
+            media = np.mean(resultados[tipo])
+            print(f"{tipo:18s} media simulada = {media:.2f}   |  λ teórico = {teoricos[tipo]:.2f}")
+
+        # IMPRIMIR DESVIO ESTANDAR
+
+        
+        print("Online: " , np.std( resultados["Online"]), 
+              "mixto on ", np.std(resultados["Mixto Online"]), 
+              "mixto pre: ", np.std(resultados["Mixto Presencial"]), 
+              "pre", np.std( resultados["Presencial"]))
 
 
 
