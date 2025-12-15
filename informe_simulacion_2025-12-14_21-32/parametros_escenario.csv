@@ -1,0 +1,35 @@
+# PARAMETROS GLOBALES
+parametro,valor
+dias,3
+hora_apertura,8
+hora_cierre,20
+cantidad_horarios_entrega,3
+gamma_mixtos_online,0.2
+seed,definido_en_llegada
+
+# LAMBDAS POR HORA
+hora,mixto,online,presencial
+0,0,2,0
+1,0,2,0
+2,0,2,0
+3,0,2,0
+4,0,2,0
+5,0,2,0
+6,0,2,0
+7,15,2,10
+8,15,3,10
+9,15,3,10
+10,15,3,10
+11,15,3,10
+12,15,3,10
+13,19,3,15
+14,19,3,15
+15,19,3,15
+16,19,1,15
+17,19,1,15
+18,19,1,15
+19,19,1,15
+20,0,1,0
+21,0,1,0
+22,0,1,0
+23,0,1,0

@@ -1,0 +1,10 @@
+dia,modelo_id,modelo_clase,porcentaje
+1,2,MultinomialLogitModel,0.3284671532846715
+1,0,MultinomialLogitModel,0.3746958637469586
+1,1,MultinomialLogitModel,0.29683698296836986
+2,0,MultinomialLogitModel,0.3090909090909091
+2,1,MultinomialLogitModel,0.35584415584415585
+2,2,MultinomialLogitModel,0.33506493506493507
+3,2,MultinomialLogitModel,0.35786802030456855
+3,0,MultinomialLogitModel,0.2868020304568528
+3,1,MultinomialLogitModel,0.3553299492385787

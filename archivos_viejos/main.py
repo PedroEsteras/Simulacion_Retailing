@@ -1,4 +1,4 @@
-from clases.clase_supermercado import Supermercado
+from archivos_viejos.clase_supermercado import Supermercado
 import random
 import numpy as np
 
